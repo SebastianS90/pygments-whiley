@@ -9,7 +9,7 @@
     :license: BSD, see LICENSE for details.
 """
 
-from pygments.lexer import RegexLexer, bygroups, words
+from pygments.lexer import RegexLexer, bygroups, words, include, default
 from pygments.token import Comment, Keyword, Name, Number, Operator, \
     Punctuation, String, Text
 
@@ -29,7 +29,7 @@ class WhileyLexer(RegexLexer):
     # http://whiley.org/download/WhileyLanguageSpec.pdf
 
     tokens = {
-        'root': [
+        'default': [
             # Whitespace
             (r'\s+', Text),
 
@@ -37,10 +37,10 @@ class WhileyLexer(RegexLexer):
             (r'//.*', Comment.Single),
             # don't parse empty comment as doc comment
             (r'/\*\*/', Comment.Multiline),
-            (r'(?ms)/\*\*.*?\*/', String.Doc),
+            (r'(?ms)/\*\*.*?\*/', Comment.Doc),
             (r'(?ms)/\*.*?\*/', Comment.Multiline),
-
-            # Keywords
+        ],
+        'keywords': [
             (words((
                 'if', 'else', 'while', 'for', 'do', 'return',
                 'switch', 'case', 'default', 'break', 'continue',
@@ -53,17 +53,31 @@ class WhileyLexer(RegexLexer):
                 'function', 'method', 'public', 'private', 'protected',
                 'export', 'native',
              ), suffix=r'\b'), Keyword.Declaration),
-            # "constant" & "type" are not keywords unless used in declarations
-            (r'(constant|type)(\s+)([a-zA-Z_]\w*)(\s+)(is)\b',
-             bygroups(Keyword.Declaration, Text, Name, Text, Keyword.Reserved)),
+            (r'(package|import)\b', Keyword.Namespace),
             (r'(true|false|null)\b', Keyword.Constant),
             (r'(bool|byte|int|real|any|void)\b', Keyword.Type),
+        ],
+        'root': [
+            include('default'),
+
+            # some keywords lead to special handling of what follows,
+            # so don't include keywords here
+
+            # "constant" and "type" are not keywords unless used in declarations
+            (r'(constant|type)(\s+)([a-zA-Z_]\w*)(\s+)(is)\b',
+             bygroups(Keyword.Declaration, Text, Name, Text, Keyword.Reserved)),
             # "from" is not a keyword unless used with import
             (r'(import)(\s+)(\*)([^\S\n]+)(from)\b',
              bygroups(Keyword.Namespace, Text, Punctuation, Text, Keyword.Namespace)),
             (r'(import)(\s+)([a-zA-Z_]\w*)([^\S\n]+)(from)\b',
              bygroups(Keyword.Namespace, Text, Name, Text, Keyword.Namespace)),
-            (r'(package|import)\b', Keyword.Namespace),
+
+            # some keywords might be followed by a list of lifetimes
+            (r'method\b', Keyword.Declaration, 'lifetimes'),
+            (r'with\b', Keyword.Reserved, 'lifetimes'),
+
+            # now we can include the keywords
+            include('keywords'),
 
             # standard library: https://github.com/Whiley/WhileyLibs/
             (words((
@@ -75,6 +89,25 @@ class WhileyLexer(RegexLexer):
                 # whiley.lang.Any
                 'toString',
              ), suffix=r'\b'), Name.Builtin),
+
+            # lambda expressions with lifetime parameters
+            (r'(&)(\s*)(?=<)', bygroups(Punctuation, Text), 'lifetimes'),
+
+            # reference type with lifetime annontation
+            (r'(&)(\s*)(this|\*)(\s*)(:)([^\S\n]*)(?!\n)',
+             bygroups(Punctuation, Text, Name.Lifetime.Builtin, Text, Punctuation, Text)),
+            (r'(&)(\s*)([a-zA-Z_]\w*)(\s*)(:)([^\S\n]*)(?!\n)',
+             bygroups(Punctuation, Text, Name.Lifetime, Text, Punctuation, Text)),
+
+            # "new" expression with lifetime annontation
+            (r'(this|\*)(\s*)(:)([^\S\n]*)(new)\b',
+             bygroups(Name.Lifetime.Builtin, Text, Punctuation, Text, Keyword.Reserved)),
+            (r'([a-zA-Z_]\w*)(\s*)(:)([^\S\n]*)(new)\b',
+             bygroups(Name.Lifetime, Text, Punctuation, Text, Keyword.Reserved)),
+
+            # named block
+            (r'([a-zA-Z_]\w*)(\s*)(:)([^\S\n]*)(?=(//.*)?$)',
+             bygroups(Name.Label, Text, Punctuation, Text)),
 
             # byte literal
             (r'[01]+b', Number.Bin),
@@ -113,5 +146,17 @@ class WhileyLexer(RegexLexer):
             (r'\\u[0-9a-fA-F]{4}', String.Escape),
             (r'\\.', String),
             (r'[^\\"]+', String),
+        ],
+        'lifetimes': [
+            include('default'),
+            (r'<', Punctuation, 'in_lifetimes_list'),
+            default('#pop'),
+        ],
+        'in_lifetimes_list': [
+            include('default'),
+            (r'>', Punctuation, '#pop:2'),
+            (r'this\b|\*', Name.Lifetime.Builtin),
+            (r'[a-zA-Z_]\w*', Name.Lifetime),
+            (r',', Punctuation),
         ],
     }
