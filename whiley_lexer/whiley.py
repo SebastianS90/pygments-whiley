@@ -57,7 +57,11 @@ class WhileyLexer(RegexLexer):
             (r'(true|false|null)\b', Keyword.Constant),
             (r'(bool|byte|int|real|any|void)\b', Keyword.Type),
         ],
-        'root': [
+        'root': [ # only for my thesis that I can use inline single word sourcecode
+            ('^this$', Name.Lifetime.Builtin),
+            default('root_normal'),
+        ],
+        'root_normal': [
             include('default'),
 
             # some keywords lead to special handling of what follows,
